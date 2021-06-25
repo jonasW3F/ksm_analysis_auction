@@ -10,6 +10,8 @@ library(ggplot2)
 library(lmtest)
 library(tseries)
 library(dplyr)
+library(vars)
+library(zoo)
 ```
 
 ```{r, echo=FALSE}
@@ -98,6 +100,10 @@ df = as.data.frame(df)
 
 ```{r, echo=show_code}
 price_data = read.csv("price_data/merged.csv")
+
+days_ts <- seq(as.Date(price_data$snapped_at[1]), as.Date(price_data$snapped_at[nrow(price_data)]), by = "day")
+
+
 ```
 
 
@@ -142,16 +148,16 @@ price_data$ada_price_normalized  = price_data$ada_price / price_data$ada_price[1
 ```
 
 ```{r, echo=show_code}
-ksm_ts_price <- ts(price_data$ksm_price_normalized, start = 1, frequency = 1)
-dot_ts_price <- ts(price_data$dot_price_normalized, start = 1, frequency = 1)
-avax_ts_price <- ts(price_data$avax_price_normalized, start = 1, frequency = 1)
-btc_ts_price <- ts(price_data$btc_price_normalized, start = 1, frequency = 1)
-sol_ts_price <- ts(price_data$sol_price_normalized, start = 1, frequency = 1)
-atom_ts_price <- ts(price_data$atom_price_normalized, start = 1, frequency = 1)
-ada_ts_price <- ts(price_data$ada_price_normalized, start = 1, frequency = 1)
+ksm_ts_price <- zoo(price_data$ksm_price_normalized, days_ts)
+dot_ts_price <- zoo(price_data$dot_price_normalized, days_ts)
+avax_ts_price <- zoo(price_data$avax_price_normalized, days_ts)
+btc_ts_price <- zoo(price_data$btc_price_normalized, days_ts)
+sol_ts_price <- zoo(price_data$sol_price_normalized, days_ts)
+atom_ts_price <- zoo(price_data$atom_price_normalized, days_ts)
+ada_ts_price <- zoo(price_data$ada_price_normalized, days_ts)
 
-combined_matrix_price <-  matrix(c(btc_ts_price, ksm_ts_price, dot_ts_price, sol_ts_price, avax_ts_price, atom_ts_price,ada_ts_price),nrow=nrow(price_data))
-combined_timeseries_price <- ts(combined_matrix_price, start = 1, frequency = 1, names = c("btc", "ksm","dot","sol","avax", "atom", "ada"))
+combined_timeseries_price = cbind(btc_ts_price, ksm_ts_price, dot_ts_price, sol_ts_price, avax_ts_price, atom_ts_price,ada_ts_price)
+colnames(combined_timeseries_price) <- c("btc", "ksm","dot","sol","avax", "atom", "ada")
 
 plot(combined_timeseries_price, main="Timeseries Prices")
 ```
@@ -202,16 +208,18 @@ price_data$ada_volume_normalized  = price_data$ada_volume / price_data$ada_volum
 ```
 
 ```{r, echo=show_code}
-ksm_ts_volume <- ts(price_data$ksm_volume_normalized, start = 1, frequency = 1)
-dot_ts_volume <- ts(price_data$dot_volume_normalized, start = 1, frequency = 1)
-avax_ts_volume <- ts(price_data$avax_volume_normalized, start = 1, frequency = 1)
-btc_ts_volume <- ts(price_data$btc_volume_normalized, start = 1, frequency = 1)
-sol_ts_volume <- ts(price_data$sol_volume_normalized, start = 1, frequency = 1)
-atom_ts_volume <- ts(price_data$atom_volume_normalized, start = 1, frequency = 1)
-ada_ts_volume <- ts(price_data$ada_volume_normalized, start = 1, frequency = 1)
+ksm_ts_volume <- zoo(price_data$ksm_volume_normalized, days_ts)
+ksm_ts_volume <- zoo(price_data$ksm_volume_normalized, days_ts)
+dot_ts_volume <- zoo(price_data$dot_volume_normalized, days_ts)
+avax_ts_volume <- zoo(price_data$avax_volume_normalized, days_ts)
+btc_ts_volume <- zoo(price_data$btc_volume_normalized, days_ts)
+sol_ts_volume <- zoo(price_data$sol_volume_normalized, days_ts)
+atom_ts_volume <- zoo(price_data$atom_volume_normalized, days_ts)
+ada_ts_volume <- zoo(price_data$ada_volume_normalized, days_ts)
 
-combined_matrix_volume <-  matrix(c(btc_ts_volume, ksm_ts_volume, dot_ts_volume, sol_ts_volume, avax_ts_volume, atom_ts_volume,ada_ts_volume),nrow=nrow(price_data))
-combined_timeseries_volume <- ts(combined_matrix_volume, start = 1, frequency = 1, names = c("btc", "ksm","dot","sol","avax", "atom", "ada"))
+combined_timeseries_volume = cbind(btc_ts_volume, ksm_ts_volume, dot_ts_volume, sol_ts_volume, avax_ts_volume, atom_ts_volume,ada_ts_volume)
+colnames(combined_timeseries_volume) <- c("btc", "ksm","dot","sol","avax", "atom", "ada")
+
 
 plot(combined_timeseries_volume, main="Timeseries Volume")
 ```
@@ -219,16 +227,15 @@ plot(combined_timeseries_volume, main="Timeseries Volume")
 We can see that the volume of KSM spiked around the announcement but apart from that follow the general trend.
 
 ```{r, echo=show_code}
-combined_matrix <-  matrix(c(ksm_ts_price, ksm_ts_volume),nrow=nrow(price_data))
+ksm_ts_price_new <- ts(price_data$ksm_price_normalized)
+ksm_ts_volume_new <- ts(price_data$ksm_volume_normalized)
+combined_matrix <-  matrix(c(ksm_ts_price_new, ksm_ts_volume_new),nrow=nrow(price_data))
 combined_timeseries <- ts(combined_matrix, start = 1, frequency = 1, names = c("ksm price", "ksm volume"))
-
 plot(combined_timeseries, main="Timeseries Market Cap")
-
 first_day_plot = 27
 second_day_plot = 34
 lines(c(first_day_plot, first_day_plot), c(0, 1.8))
 lines(c(second_day_plot, second_day_plot), c(0, 1.8))
-
 ```
 
 In the previous plot, we compare the KSM volume with the KSM price and indicate two important events. First, the `r price_data$snapped_at[first_day_plot]`, which is the announcement of the auctions and the `r price_data$snapped_at[first_day_plot]`, which is the start of the first auction. The price and volume picks up on the announcement, but declines with the start of the auction.
@@ -246,16 +253,18 @@ price_data$ada_cap_normalized  = price_data$ada_cap / price_data$ada_cap[1]
 ```
 
 ```{r, echo=show_code}
-ksm_ts_cap <- ts(price_data$ksm_cap_normalized, start = 1, frequency = 1)
-dot_ts_cap <- ts(price_data$dot_cap_normalized, start = 1, frequency = 1)
-avax_ts_cap <- ts(price_data$avax_cap_normalized, start = 1, frequency = 1)
-btc_ts_cap <- ts(price_data$btc_cap_normalized, start = 1, frequency = 1)
-sol_ts_cap <- ts(price_data$sol_cap_normalized, start = 1, frequency = 1)
-atom_ts_cap <- ts(price_data$atom_cap_normalized, start = 1, frequency = 1)
-ada_ts_cap <- ts(price_data$ada_cap_normalized, start = 1, frequency = 1)
+ksm_ts_cap <- zoo(price_data$ksm_cap_normalized, days_ts)
+ksm_ts_cap <- zoo(price_data$ksm_cap_normalized, days_ts)
+dot_ts_cap <- zoo(price_data$dot_cap_normalized, days_ts)
+avax_ts_cap <- zoo(price_data$avax_cap_normalized, days_ts)
+btc_ts_cap <- zoo(price_data$btc_cap_normalized, days_ts)
+sol_ts_cap <- zoo(price_data$sol_cap_normalized, days_ts)
+atom_ts_cap <- zoo(price_data$atom_cap_normalized, days_ts)
+ada_ts_cap <- zoo(price_data$ada_cap_normalized, days_ts)
 
-combined_matrix_cap <-  matrix(c(btc_ts_cap, ksm_ts_cap, dot_ts_cap, sol_ts_cap, avax_ts_cap, atom_ts_cap,ada_ts_cap),nrow=nrow(price_data))
-combined_timeseries_cap <- ts(combined_matrix_cap, start = 1, frequency = 1, names = c("btc", "ksm","dot","sol","avax", "atom", "ada"))
+combined_timeseries_cap = cbind(btc_ts_cap, ksm_ts_cap, dot_ts_cap, sol_ts_cap, avax_ts_cap, atom_ts_cap,ada_ts_cap)
+colnames(combined_timeseries_cap) <- c("btc", "ksm","dot","sol","avax", "atom", "ada")
+
 
 plot(combined_timeseries_cap, main="Timeseries Market Cap")
 ```
@@ -267,9 +276,10 @@ As the market cap is a function of the price and the issuance, it closely resemb
 In order to find out whether the KSM price is driven by the BTC price, we can use Granger causality. This tests whether one timeseries causally affects the other. More specifically, a timeseries X is said to Granger-cause Y if Y can be better predicted using the histories of both X and Y than it can by using the history of Y alone. In other words, does knowing the price of BTC have predictive power to estimate the price of KSM?
 
 ```{r, echo=show_code}
-combined_matrix_btc_ksm_price <-  matrix(c(btc_ts_price, ksm_ts_price),nrow=nrow(price_data))
-combined_timeseries_btc_ksm_price <- ts(combined_matrix_btc_ksm_price, start = 1, frequency = 1, names = c("btc", "ksm"))
-grangertest(ksm ~ btc, data = combined_timeseries_btc_ksm_price, order = 3)
+combined_timeseries_btc_ksm_price <- cbind(btc_ts_price, ksm_ts_price)
+colnames(combined_timeseries_btc_ksm_price) <- c("btc_price", "ksm_price")
+
+grangertest(ksm_price ~ btc_price, data = combined_timeseries_btc_ksm_price, order = 3)
 ```
 We cannot reject the H0 that the price of BTC does not Granger-cause the price of KSM. This means that knowing the price of BTC at a certain lag has no predictive value on the price of KSM. The same result holds for different lags.
 
@@ -321,7 +331,7 @@ We can observe that there has been a large amount of KSM withdrawn at once betwe
 | Sum                                             | **198180 KSM**      |              |                      |
 |                                                 |                 |              |                      |
 
-All those accounts sent their funds to EkmdfH2Fc6XgPgDwMjye3Nsdj27CCSi9np8Kc7zYoCL2S3G, which is now contributing regularly to various crowdloans. That indicates that it is an address managed by an Exchange and that there has not been selling pressure from there. Subtracting the above mentioned KSM from the overall unstaked amount during the time, leaves us with: `r format((unbonded_sum[1] - unbonded_sum[2])*normalization - 198180, scientific=FALSE)` KSM which has been unstaked.
+All those accounts sent their funds to EkmdfH2Fc6XgPgDwMjye3Nsdj27CCSi9np8Kc7zYoCL2S3G, which is now contributing regularly to various crowdloans. That indicates that it is an address managed by an Exchange and that there has not been selling pressure from there. Subtracting the above mentioned KSM from the overall unstaked amount during the time, leaves us with: `r format((unbonded_sum[1] - unbonded_sum[2]) - 198180, scientific=FALSE)` KSM which has been unstaked.
 
 
 ## Statistical Tests
@@ -346,27 +356,29 @@ for(i in 1:(length(x))) {
 df_tmp = as.data.frame(cbind(x,days, nominators_bond_history))
 df_new = aggregate(df_tmp$nominators_bond_history, by=list(df_tmp$days), FUN=mean)
 
-bond_ts = ts(df_new$x, start = 1, frequency = 1)
-ksm_ts_price = ts(price_data$ksm_price)
+bond_ts = zoo(df_new$x*normalization, days_ts)
+ksm_ts_price = zoo(price_data$ksm_price, days_ts)
 
-combined_matrix_bond_ksm_price <-  matrix(c(bond_ts, ksm_ts_price),nrow=length(bond_ts))
-combined_timeseries_bond_ksm_price <- ts(combined_matrix_bond_ksm_price, start = 1, frequency = 1, names = c("staked_amount", "ksm_price"))
+combined_timeseries_bond_ksm_price <- cbind(bond_ts, ksm_ts_price)
+colnames(combined_timeseries_bond_ksm_price) <- c("staked_amount", "ksm_price")
 grangertest(ksm_price ~ staked_amount, data = combined_timeseries_bond_ksm_price, order = 2)
 ```
 
-The statistical test is significant which means, that we can reject the H0 that the unstaking behavior does not influence the price of KSM. The reverse causality is not true (p < 0.2946), i.e., the KSM price did not influence unstaking decisions. 
+The statistical test is not significant which means, that we cannot reject the H0 that the unstaking behavior does not influence the price of KSM. To confirm this, we run a Vector Autoregression analysis (VAR). 
 
 ```{r, echo=show_code}
-plot(combined_timeseries)
+var.aic = VAR(combined_timeseries_bond_ksm_price, type = "none", lag.max = 5, ic = "AIC")
+summary(var.aic)
 ```
 
+The VAR analysis confirms that the unstaked amount of KSM does not seem to have influenced the price.
 
 **Result 3:**
 
 * The staking rate only decreased by a few percent in response to the announcement of the auction.
 * This might be due to the fact that the staking rate is already far from the optimal (75%) and therefore staking remains quite attractive.
 * A large unstaking event can be observed where a potential exchange unstaked in order to provide liquidity for crowdloan contributions of their customers.
-* A statistical test suggests that the unstaking dynamics actually has some causal effect on the price development of KSM. 
+* A statistical test suggests that the unstaking dynamics has no effect on the price dynamic. 
 
 
 
@@ -453,12 +465,12 @@ The amount of tokens from the total unstaking during the period which are still 
 
 # Conclusion
 
-The crypto-market is experiencing a bear market that negatively affects all prices. As seen in the tables above, KSM suffered similar price decrease than those of competitors. However, there was a period around the announcement that increased the price significantly (even during the bear market). If take that situation as reference point, KSM lost all momentum from the good news of the auctions in the process and did not contribute to a higher relative standing than comparable crypto-currencies.  
+The crypto-market is experiencing a bear market that negatively affects all prices. As seen in the tables above, KSM suffered similar price decrease than those of competitors. However, there was a period around the announcement that increased the price significantly (even during the bear market). If take that situation as reference point, KSM lost all momentum from the good news of the auctions in the process and did not contribute to a higher relative standing than comparable crypto-currencies. With respect to the influence of unstaked tokens on the price dynamic, the statistical tests indicate that there has not been pressure on the price. However, the ratio of unstaked tokens to crowdloan contributions are rather low. Potentially, users unstaked their tokens with the intent to contribute to crowdloans, but then saw themselves trapped by the bear market. Now, they cannot decide whether they want to re-stake, contribute or sell the tokens.
 
 **There are some things to consider for the Polkadot announcement:**
 
 * The longer unstaking period could help reduce the pressure on the price, because liquidity is coming more slowly to the market (compared to a price increase from the announcement).
-* Optimally, we find a mechanism to skip unstaking and directly shift funds to crowdloans.
+* Optimally, we find a mechanism to skip unstaking and directly shift funds to crowdloans. It is clear that bonded tokens are a security guarantee necessary for slashing, but maybe we can find a way that you can commit staked tokens to crowdloans with the benefit that the unbonding period (28 days) is still rewarded with a small inflation protection. 
 * It is crucial to time the announcement / conduction of the auctions with a good market situation (either bull market or sidewards trending prices).
 
 
