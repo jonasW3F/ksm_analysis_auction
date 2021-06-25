@@ -1,0 +1,463 @@
+---
+title: "Kusama Analysis"
+author: "Jonas Gehrlein"
+date: "6/25/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(lmtest)
+library(tseries)
+library(dplyr)
+
+library(tidyverse)
+library(ggfortify)
+```
+
+```{r, echo=FALSE}
+show_code = FALSE
+chain = "kusama"
+first_session = 12748 
+current_session = 13755
+
+#first_session = 13383
+#current_session = 13386
+
+difference = current_session - first_session 
+x = c(first_session:(first_session + difference))
+
+normalization = 1/1000000000000
+# Additional normalization
+normalization_thousands = 1/1000
+normalization_millions = 1/1000000
+normalization_billions = 1/1000000000
+```
+
+
+```{r, echo = show_code}
+staking_rate = 1:length(x)
+validators_total_stake_history = 1:length(x)
+validators_num_stakers_history = 1:length(x)
+nominators_bond_history = 1:length(x)
+nominators_num_nominators_history = 1:length(x)
+unbonded_sum = 1:2
+```
+
+```{r, echo = show_code, message=FALSE}
+# Import data from local drive
+for(i in 1:length(x)) {
+    nominators <- read.csv(paste("kusama_datasets/", chain , "_nominators_session_", x[i], ".csv", sep=("")))
+
+    validators <- read.csv(paste("kusama_datasets/", chain , "_validators_session_", x[i], ".csv", sep=("")))
+
+staking_rate[i] =  sum(validators$total_stake) / validators$total_issuance[1] 
+nominators_num_nominators_history[i] = nrow(nominators)
+nominators_bond_history[i] = sum(nominators$bonded_amount)
+validators_total_stake_history[i] = sum(validators$total_stake)
+
+#-------------
+if(i==1){
+  # Initiate the data frame that tracks the changes in bonds per nominator
+  bond_evolution = subset(nominators, select = c(stash_address))
+  bond_evolution$difference = 0
+  nominators_old = nominators
+  nominators_old$bonded_amount = nominators_old$bonded_amount*normalization
+}
+else {
+  nominators_new = nominators
+  nominators_new$bonded_amount = nominators_new$bonded_amount*normalization
+  tmp_merged = merge(nominators_old, nominators_new, by="stash_address", all = TRUE)
+  subset <- subset(tmp_merged, select = c(bonded_amount.x, bonded_amount.y, stash_address))
+  subset$bonded_amount.y = ifelse(is.na(subset$bonded_amount.y), 0, subset$bonded_amount.y)
+  subset$bonded_amount.x = ifelse(is.na(subset$bonded_amount.x), 0, subset$bonded_amount.x)
+  subset$difference = subset$bonded_amount.y - subset$bonded_amount.x
+  subset <- subset(subset, select=c(stash_address, difference))
+  bond_evolution = merge(bond_evolution, subset, by="stash_address", all = TRUE)
+  bond_evolution$difference.y = ifelse(is.na(bond_evolution$difference.y), 0, bond_evolution$difference.y)
+  bond_evolution$difference.x = ifelse(is.na(bond_evolution$difference.x), 0, bond_evolution$difference.x)
+  bond_evolution$difference = (bond_evolution$difference.x + bond_evolution$difference.y)
+  bond_evolution = subset(bond_evolution, select = c(stash_address, difference))
+  nominators_old = nominators_new
+}
+#-------------
+
+
+# Calculate the sum of decrease in bond during the whole time
+if(i==1){
+  unbonded_sum[1] = sum(nominators$bonded_amount*normalization)
+}
+
+if(i==length(x)){
+  unbonded_sum[2] = sum(nominators$bonded_amount*normalization)
+}
+# --------
+}
+
+df = cbind(nominators_bond_history, session=x, validators_total_stake_history, validators_num_stakers_history, staking_rate, nominators_num_nominators_history)
+df = as.data.frame(df)
+```
+
+
+```{r, echo=show_code}
+price_data = read.csv("price_data/merged.csv")
+```
+
+
+# Introduction
+With the launch of crowdloans and parachain auctions, the Kusama network has overall lost significant market capitalization. However, there is a general decline in crypto-currency prices across all coins, which could bias the perception. This analysis aims to analyze different aspects that happened during a `r nrow(price_data)` days period (between the `r price_data$snapped_at[1]` and `r price_data$snapped_at[nrow(price_data)]`). This includes the mid of May where prices were generally high, as well as the following bear market during which the Kusama auctions were announced and launched.
+
+In this analysis, I focus on market data (prices, market cap and trading volume) of BTC, KSM and some close competitors. Additionally, I incorporate behavioral on-chain data (unstaking decisions and crowdloan contributions). The following questions should be answered:
+
+* What is the current development of the KSM price compared to BTC and close competitors?
+* Is the price crash of Kusama more severe than for other tokens?
+* Is the decline in the KSM price causally linked to the BTC price or other tokens?
+* Can the price development of Kusama be explained by unstaking events (i.e., are coins more likely sold than contributed)?
+* How much KSM is contributed to the crowdloans and how is that split between the various projects?
+* As an estimate, how many KSM were unstaked and actually ended up in crowdloans? This also gives some information on how much is still liquid or potentially was sold.
+
+## Overview
+
+| Name                  | Date | Session_number |
+|-----------------------|------|----------------|
+| First Day of Analysis |  `r price_data$snapped_at[1] `    |       `r x[1] `         |
+| Last Day of Analysis  |  `r price_data$snapped_at[nrow(price_data)] `    |      `r x[length(x)] `          |
+| Auction Announcement  |  2021-06-08    |      13384         |
+| First Crowdloan       | 2021-06-08  |         13391       |
+| Start Auction       | 2021-06-15  |         13554       |
+
+
+# Market Data
+
+In this section, we take a closer look on market data available for the various coins selected. We will have a look at the price data as well as exchange volume. **The market data is available from the `r price_data$snapped_at[1]` (Day 0) until the `r price_data$snapped_at[nrow(price_data)]` (Day `r nrow(price_data)`)**.
+
+## Price Data
+
+```{r, echo=show_code}
+# Normalize values to be starting at 1 for all coins
+price_data$ksm_price_normalized = price_data$ksm_price / price_data$ksm_price[1]
+price_data$dot_price_normalized  = price_data$dot_price / price_data$dot_price[1]
+price_data$avax_price_normalized  = price_data$avax_price / price_data$avax_price[1]
+price_data$btc_price_normalized  = price_data$btc_price / price_data$btc_price[1]
+price_data$sol_price_normalized  = price_data$sol_price / price_data$sol_price[1]
+price_data$atom_price_normalized  = price_data$atom_price / price_data$atom_price[1]
+price_data$ada_price_normalized  = price_data$ada_price / price_data$ada_price[1]
+```
+
+```{r, echo=show_code}
+ksm_ts_price <- ts(price_data$ksm_price_normalized, start = 1, frequency = 1)
+dot_ts_price <- ts(price_data$dot_price_normalized, start = 1, frequency = 1)
+avax_ts_price <- ts(price_data$avax_price_normalized, start = 1, frequency = 1)
+btc_ts_price <- ts(price_data$btc_price_normalized, start = 1, frequency = 1)
+sol_ts_price <- ts(price_data$sol_price_normalized, start = 1, frequency = 1)
+atom_ts_price <- ts(price_data$atom_price_normalized, start = 1, frequency = 1)
+ada_ts_price <- ts(price_data$ada_price_normalized, start = 1, frequency = 1)
+
+combined_matrix_price <-  matrix(c(btc_ts_price, ksm_ts_price, dot_ts_price, sol_ts_price, avax_ts_price, atom_ts_price,ada_ts_price),nrow=nrow(price_data))
+combined_timeseries_price <- ts(combined_matrix_price, start = 1, frequency = 1, names = c("btc", "ksm","dot","sol","avax", "atom", "ada"))
+
+plot(combined_timeseries_price, main="Timeseries Prices")
+```
+
+All prices are normalized to 1 for the first day. The data shows, that KSM spiked around the 10th of June (day 29) during the bear market as a reaction to the announcement of the auctions (8th of June). Generally, all coins lost significant value since the 25th of May and it is difficult to disentangle that general trend from the announcement of auctions. The next table shows how much value each coin lost since the 25th of May.
+
+| Coin | Price change from day 25th May to 23rd June |
+|------|---------------------------------------|
+| BTC  |    `r (price_data$btc_price[length(price_data$btc_price)] - price_data$btc_price[1]) / price_data$btc_price[1]*100` %                                  |
+| DOT  |  `r (price_data$dot_price[length(price_data$dot_price)] - price_data$dot_price[1]) / price_data$dot_price[1]*100` %                                      |
+| KSM  |   `r (price_data$ksm_price[length(price_data$ksm_price)] - price_data$ksm_price[1]) / price_data$ksm_price[1]*100` %                                     |
+| AVAX |      `r (price_data$avax_price[length(price_data$avax_price)] - price_data$avax_price[1]) / price_data$avax_price[1]*100` %                                  |
+| SOL  |    `r (price_data$sol_price[length(price_data$sol_price)] - price_data$sol_price[1]) / price_data$sol_price[1]*100` %                                    |
+| ATOM |       `r (price_data$atom_price[length(price_data$atom_price)] - price_data$atom_price[1]) / price_data$atom_price[1]*100` %                                 |
+| ADA  |    `r (price_data$ada_price[length(price_data$ada_price)] - price_data$ada_price[1]) / price_data$ada_price[1]*100` %                                    |
+
+If we take the 25th of May as reference date, we can see that KSM declined similar to other non-BTC coins (with the exception of Solana). The next table shows the relative decline of the coins if we take the 10th of June as reference.
+
+| Coin | Price change from day 10th June to 23rd June |
+|------|---------------------------------------|
+| BTC  |    `r (price_data$btc_price[length(price_data$btc_price)] - price_data$btc_price[29]) / price_data$btc_price[29]*100` %                                  |
+| DOT  |  `r (price_data$dot_price[length(price_data$dot_price)] - price_data$dot_price[29]) / price_data$dot_price[29]*100` %                                      |
+| KSM  |   `r (price_data$ksm_price[length(price_data$ksm_price)] - price_data$ksm_price[29]) / price_data$ksm_price[29]*100` %                                     |
+| AVAX |      `r (price_data$avax_price[length(price_data$avax_price)] - price_data$avax_price[29]) / price_data$avax_price[29]*100` %                                  |
+| SOL  |    `r (price_data$sol_price[length(price_data$sol_price)] - price_data$sol_price[29]) / price_data$sol_price[29]*100` %                                    |
+| ATOM |       `r (price_data$atom_price[length(price_data$atom_price)] - price_data$atom_price[29]) / price_data$atom_price[29]*100` %                                 |
+| ADA  |    `r (price_data$ada_price[length(price_data$ada_price)] - price_data$ada_price[29]) / price_data$ada_price[29]*100` %                                    |
+
+
+**Result 1:**
+
+* If we take the situation where auctions were not in the media attention as reference, KSM lost value comparable to the market.
+* The announcement / start of the auction gave the KSM value momentum (even as all prices tumbled).
+* However, this price increase could not be sustained.
+* This is backed by anecdotal evidence that good news are only providing sustainable rise in price if markets are bullish (or going sidewards). In bad market circumstances people mainly focus on FUD and discount good news so that price increases cannot be sustained.
+
+## Volume
+
+```{r, echo=show_code}
+# Normalize values to be starting at 1 for all coins
+price_data$ksm_volume_normalized = price_data$ksm_volume / price_data$ksm_volume[1]
+price_data$dot_volume_normalized  = price_data$dot_volume / price_data$dot_volume[1]
+price_data$avax_volume_normalized  = price_data$avax_volume / price_data$avax_volume[1]
+price_data$btc_volume_normalized  = price_data$btc_volume / price_data$btc_volume[1]
+price_data$sol_volume_normalized  = price_data$sol_volume / price_data$sol_volume[1]
+price_data$atom_volume_normalized  = price_data$atom_volume / price_data$atom_volume[1]
+price_data$ada_volume_normalized  = price_data$ada_volume / price_data$ada_volume[1]
+```
+
+```{r, echo=show_code}
+ksm_ts_volume <- ts(price_data$ksm_volume_normalized, start = 1, frequency = 1)
+dot_ts_volume <- ts(price_data$dot_volume_normalized, start = 1, frequency = 1)
+avax_ts_volume <- ts(price_data$avax_volume_normalized, start = 1, frequency = 1)
+btc_ts_volume <- ts(price_data$btc_volume_normalized, start = 1, frequency = 1)
+sol_ts_volume <- ts(price_data$sol_volume_normalized, start = 1, frequency = 1)
+atom_ts_volume <- ts(price_data$atom_volume_normalized, start = 1, frequency = 1)
+ada_ts_volume <- ts(price_data$ada_volume_normalized, start = 1, frequency = 1)
+
+combined_matrix_volume <-  matrix(c(btc_ts_volume, ksm_ts_volume, dot_ts_volume, sol_ts_volume, avax_ts_volume, atom_ts_volume,ada_ts_volume),nrow=nrow(price_data))
+combined_timeseries_volume <- ts(combined_matrix_volume, start = 1, frequency = 1, names = c("btc", "ksm","dot","sol","avax", "atom", "ada"))
+
+plot(combined_timeseries_volume, main="Timeseries Volume")
+```
+
+We can see that the volume of KSM spiked around the announcement but apart from that follow the general trend.
+
+```{r, echo=show_code}
+combined_matrix <-  matrix(c(ksm_ts_price, ksm_ts_volume),nrow=nrow(price_data))
+combined_timeseries <- ts(combined_matrix, start = 1, frequency = 1, names = c("ksm price", "ksm volume"))
+
+plot(combined_timeseries, main="Timeseries Market Cap")
+
+first_day_plot = 27
+second_day_plot = 34
+lines(c(first_day_plot, first_day_plot), c(0, 1.8))
+lines(c(second_day_plot, second_day_plot), c(0, 1.8))
+
+```
+
+In the previous plot, we compare the KSM volume with the KSM price and indicate two important events. First, the `r price_data$snapped_at[first_day_plot]`, which is the announcement of the auctions and the `r price_data$snapped_at[first_day_plot]`, which is the start of the first auction. The price and volume picks up on the announcement, but declines with the start of the auction.
+
+
+```{r, echo=show_code}
+# Normalize values to be starting at 1 for all coins
+price_data$ksm_cap_normalized = price_data$ksm_cap / price_data$ksm_cap[1]
+price_data$dot_cap_normalized  = price_data$dot_cap / price_data$dot_cap[1]
+price_data$avax_cap_normalized  = price_data$avax_cap / price_data$avax_cap[1]
+price_data$btc_cap_normalized  = price_data$btc_cap / price_data$btc_cap[1]
+price_data$sol_cap_normalized  = price_data$sol_cap / price_data$sol_cap[1]
+price_data$atom_cap_normalized  = price_data$atom_cap / price_data$atom_cap[1]
+price_data$ada_cap_normalized  = price_data$ada_cap / price_data$ada_cap[1]
+```
+
+```{r, echo=show_code}
+ksm_ts_cap <- ts(price_data$ksm_cap_normalized, start = 1, frequency = 1)
+dot_ts_cap <- ts(price_data$dot_cap_normalized, start = 1, frequency = 1)
+avax_ts_cap <- ts(price_data$avax_cap_normalized, start = 1, frequency = 1)
+btc_ts_cap <- ts(price_data$btc_cap_normalized, start = 1, frequency = 1)
+sol_ts_cap <- ts(price_data$sol_cap_normalized, start = 1, frequency = 1)
+atom_ts_cap <- ts(price_data$atom_cap_normalized, start = 1, frequency = 1)
+ada_ts_cap <- ts(price_data$ada_cap_normalized, start = 1, frequency = 1)
+
+combined_matrix_cap <-  matrix(c(btc_ts_cap, ksm_ts_cap, dot_ts_cap, sol_ts_cap, avax_ts_cap, atom_ts_cap,ada_ts_cap),nrow=nrow(price_data))
+combined_timeseries_cap <- ts(combined_matrix_cap, start = 1, frequency = 1, names = c("btc", "ksm","dot","sol","avax", "atom", "ada"))
+
+plot(combined_timeseries_cap, main="Timeseries Market Cap")
+```
+
+As the market cap is a function of the price and the issuance, it closely resembles the development of the prices of the various coins and not much additional insights can be gained from here.
+
+# Statistical Tests
+
+In order to find out whether the KSM price is driven by the BTC price, we can use Granger causality. This tests whether one timeseries causally affects the other. More specifically, a timeseries X is said to Granger-cause Y if Y can be better predicted using the histories of both X and Y than it can by using the history of Y alone. In other words, does knowing the price of BTC have predictive power to estimate the price of KSM?
+
+```{r, echo=show_code}
+combined_matrix_btc_ksm_price <-  matrix(c(btc_ts_price, ksm_ts_price),nrow=nrow(price_data))
+combined_timeseries_btc_ksm_price <- ts(combined_matrix_btc_ksm_price, start = 1, frequency = 1, names = c("btc", "ksm"))
+grangertest(ksm ~ btc, data = combined_timeseries_btc_ksm_price, order = 3)
+```
+We cannot reject the H0 that the price of BTC does not Granger-cause the price of KSM. This means that knowing the price of BTC at a certain lag has no predictive value on the price of KSM. The same result holds for different lags.
+
+```{r, echo=show_code}
+grangertest(ksm_ts_price, dot_ts_price, order=3)
+grangertest(dot_ts_price, ksm_ts_price, order=3)
+
+```
+As a sidenote, it seems that the KSM and DOT price are closely related and causally affect each other (in both directions). 
+
+**Result 2:**
+
+* Statistical evidence suggests that the KSM price is not directly influenced by the BTC price.
+* The DOT and KSM price are closely related and both are causally linked with a lag of 3.
+
+# Behavioral Network Data
+
+## Staking Rate and Unstaking Dynamics
+
+```{r, echo=show_code}
+title = paste("Staking rate")
+  p <- ggplot(df, aes(x=session, y=staking_rate)) + geom_line() + xlab("Sessions") + ylab("Staking Rate") + ggtitle(title)  + ylim(min(0),max(1))+ geom_vline(xintercept=c(13384,13391), linetype='dashed', color='blue', size=0.5) + annotate(x=13384,y=+Inf,label="Auction Announcement / First Crowdloan",vjust=2,geom="label")
+plot(p)
+```
+The staking rate revolves around 50%, which is actually quite far away from the optimal of 75%. If this remains an issue even with the changes that come to the optimal staking rate due to parachains, this needs to be further addressed in the future. Apart from that, the impact on the staking rate was around 3% of all issued tokens.
+
+
+```{r, echo=show_code}
+title = paste("Sum of unstaked tokens")
+p <- ggplot(df, aes(x=session, y=nominators_bond_history*normalization*normalization_millions)) + geom_line() + xlab("Sessions") + ylab(paste("Sum of unstaked tokens in 1M ", "KSM")) + ggtitle(title) + geom_vline(xintercept=c(13384,13391), linetype='dashed', color='blue', size=0.5) + annotate(x=13384,y=6,label="Auction Announcement / First Crowdloan",vjust=2,geom="label") + ylim(5,6.2) 
+plot(p) 
+
+total_unstaked = (unbonded_sum[1] - unbonded_sum[2])
+
+```
+
+During the whole time of analysis, a total of `r format(total_unstaked,scientific=FALSE)` KSM were unstaked.
+
+We can observe that there has been a large amount of KSM withdrawn at once between session 13356 and 13357. Upon further inspection, it seems that this has largely be caused by a single entity.
+
+| Address                                         | Amount Unbonded | Block unbond | Block bond withdrawn |
+|-------------------------------------------------|-----------------|--------------|----------------------|
+| G54yeoqphv5wFhKKuREJRbJesQxB2m2A6LadNYdU4pwYuDm | 49545 KSM       | 7563741      | 7807298              |
+| CdGAmdYxogDKTgg89nkLrh51PCG5PAspCJqHVr4m3mRFRAb | 49545 KSM       | 7563741      | 7807298              |
+| EwYyeF8izxHwXA7C4fj1pVWyG8fEQWjR73bZjRu9rYqVXwt | 49545 KSM       | 7563730      | 7807276              |
+| Hh3CiU2nCKvGh4emrWnFZ3oqK9cndTkkoYJgbYDvByary1e | 49545 KSM       | 7563760      | 7807276              |
+| HHQeC8PFAdbLRsKevsiwvPPqZZrBLzsCwgDnRkUwi8myEs2 | 49545 KSM       | 7563768      | 7807276              |
+| Sum                                             | **198180 KSM**      |              |                      |
+|                                                 |                 |              |                      |
+
+All those accounts sent their funds to EkmdfH2Fc6XgPgDwMjye3Nsdj27CCSi9np8Kc7zYoCL2S3G, which is now contributing regularly to various crowdloans. That indicates that it is an address managed by an Exchange and that there has not been selling pressure from there. Subtracting the above mentioned KSM from the overall unstaked amount during the time, leaves us with: `r format((unbonded_sum[1] - unbonded_sum[2])*normalization - 198180, scientific=FALSE)` KSM which has been unstaked.
+
+
+## Statistical Tests
+In this section, we use Granger causality to estimate if the timeseries of unstaked tokens influenced the price of KSM. If that is the case, it could indicate that the unstaked tokens were used to sell on the market. 
+
+```{r, echo=show_code}
+exchange_unstaked = 198180
+
+day = 1
+days = 1:(length(x))
+
+# For one day we have 24 datasets in kusama (from 0:21 a.m. to 0:21 a.m next day). With this function we can attach a "day" variable to the sessions and then compare that better to the price data (which has the resolution of a day)
+for(i in 1:(length(x))) {
+    if(days[i]%%24 == 0){
+    days[i] = day
+    day = day + 1
+  } else {
+    days[i] = day
+  }
+}
+
+df_tmp = as.data.frame(cbind(x,days, nominators_bond_history))
+df_new = aggregate(df_tmp$nominators_bond_history, by=list(df_tmp$days), FUN=mean)
+
+bond_ts = ts(df_new$x, start = 1, frequency = 1)
+
+combined_matrix_bond_ksm_price <-  matrix(c(bond_ts, ksm_ts_price),nrow=length(bond_ts))
+combined_timeseries_bond_ksm_price <- ts(combined_matrix_bond_ksm_price, start = 1, frequency = 1, names = c("staked_amount", "ksm_price"))
+grangertest(ksm_price ~ staked_amount, data = combined_timeseries_bond_ksm_price, order = 1)
+```
+
+The statistical test is significant which means, that we can reject the H0 that the unstaking behavior does not influence the price of KSM. The reverse causality is not true (p < 0.2946), i.e., the KSM price did not influence unstaking decisions. 
+
+```{r, echo=show_code}
+plot(combined_timeseries)
+```
+
+
+**Result 3:**
+
+* The staking rate only decreased by a few percent in response to the announcement of the auction.
+* This might be due to the fact that the staking rate is already far from the optimal (75%) and therefore staking remains quite attractive.
+* A large unstaking event can be observed where a potential exchange unstaked in order to provide liquidity for crowdloan contributions of their customers.
+* A statistical test suggests that the unstaking dynamics actually has some causal effect on the price development of KSM. 
+
+
+
+# Crowdloan Data
+
+```{r, echo=show_code}
+df_crowdloans = read.csv("crowdloan_contributions/output.csv", stringsAsFactors = FALSE)
+
+# Collapse on Project level
+df_crowdloans_teams = aggregate(df_crowdloans$contributed*normalization, list(df_crowdloans$para_id), sum)
+
+karura_contribution = df_crowdloans_teams[df_crowdloans_teams$Group.1 == 2000, "x"]
+bifrost_contribution = df_crowdloans_teams[df_crowdloans_teams$Group.1 == 2001, "x"]
+khala_contribution = df_crowdloans_teams[df_crowdloans_teams$Group.1 == 2004, "x"]
+darwinia_contribution = df_crowdloans_teams[df_crowdloans_teams$Group.1 == 2006, "x"]
+shiden_contribution = df_crowdloans_teams[df_crowdloans_teams$Group.1 == 2007, "x"]
+moonriver_contribution = df_crowdloans_teams[df_crowdloans_teams$Group.1 == 2023, "x"]
+
+
+# Collapse on account level
+df_crowdloans_aggregated = aggregate(df_crowdloans$contributed, list(df_crowdloans$who), sum)
+df_crowdloans_aggregated = rename(df_crowdloans_aggregated, stash_address = Group.1, contribution = x)
+df_crowdloans_aggregated$contribution = df_crowdloans_aggregated$contribution*normalization
+
+# Merge crowdloans with unstake-database to link the unstaked amount with the contributions to crowdloans
+merged_crowdloans <- merge(df_crowdloans_aggregated, bond_evolution, by ="stash_address")
+
+# Here we only take those accounts with negative difference (i.e., they did unstake over the time). Then we transform it to a positive number and take the minimum between their unstake and crowdloan contribution (if the unstake is lower than the contribution,  we only want to know how much stake went into crowdloans from unstaking. If the contribution is lower than the unstake, we still only want the unstake).
+
+df_only_positive = subset(merged_crowdloans, difference < 0)
+df_only_positive$difference = df_only_positive$difference*-1
+df_only_positive = df_only_positive %>%
+  rowwise() %>%
+  mutate(
+    minimum = min(c(difference, contribution))
+  )
+
+contributed_from_stake = sum(df_only_positive$minimum)
+
+contributors_and_unstakers = nrow(merge(bond_evolution, df_crowdloans_aggregated, by ="stash_address"))
+
+# Here we can calculate which accounts had a positive balance of stake during the period.
+bond_evolution_positive = subset(bond_evolution, difference > 0)
+rebonded = sum(bond_evolution_positive$difference)
+
+bond_evolution_negative = subset(bond_evolution, difference < 0)
+unstaked = sum(bond_evolution_negative$difference)
+```
+## Crowdloan Contributions
+
+The following table shows the number of KSM contributed to each project (up until block `r df_crowdloans$block_number[1]`).
+
+| Name      | Contribution |
+|-----------|--------------|
+| Karura    |   `r format(karura_contribution,scientific=FALSE)`           |
+| Khala     |     `r format(khala_contribution,scientific=FALSE)`             |
+| Bifrost   |     `r format(bifrost_contribution,scientific=FALSE)`             |
+| Shiden    |      `r format(shiden_contribution,scientific=FALSE)`            |
+| Moonriver |      `r format(moonriver_contribution,scientific=FALSE)`            |
+| Darwinia  |      `r format(darwinia_contribution,scientific=FALSE)`            |
+
+
+
+## Stake to Contributions
+The following analysis matches the accounts that unstaked KSM with those accounts contributing in the crowdloans. This makes it possible to roughly estimate how many KSM, which were unstaked, actually went into crowdloans. It also gives an idea how much tokens remain liquid or have been sold in the process.
+
+In total, `r format(sum(df_crowdloans_aggregated$contribution), scientific=FALSE) `KSM have been contributed to crowdloans (data until block `r df_crowdloans$block_number[1]`) from `r nrow(df_crowdloans_aggregated)` individual accounts. Of those, `r contributors_and_unstakers` accounts also have unstaked KSM during the period of analysis. 
+
+The total number of unstaked KSM in the whole period is `r format(total_unstaked, scientific=FALSE)` KSM. This resembles the sum of the total number of `r (format(unstaked*-1, scientific=FALSE))` unstaked KSM and `r format(rebonded, scientific=FALSE)` (re-)staked KSM. As we observed before, `r format(exchange_unstaked,scientific=FALSE)` KSM were unstaked of an exchange in order to offer liquidity for users. As those tokens are custodials, we exclude them from the analysis (as they are not clearly used to sell or to contribute to crowdloans). 
+
+By cross-referencing the accounts that unstaked and contributed to the crowdloans, we can argue that `r format(contributed_from_stake, scientific=FALSE)` of the total number of unstaked tokens went into crowdloans. This involves the case where one and the same account unstaked and contributed later to the crowdloans. The ratio of unstaked tokens (without that of the exchange) to crowdloan contribution is `r round((contributed_from_stake / (total_unstaked-exchange_unstaked))*100,2)`%. It has to be noted that this number in reality is probably a bit higher, because we are missing those cases where accounts unstaked, send the KSM to a different account and contributed from there. 
+
+The amount of tokens from the total unstaking during the period which are still liquid and could be sold are those tokens that have not yet been restaked, not contributed to the crowdloan and are not in possession of that one large exchange. This sums up to: `r format(total_unstaked - contributed_from_stake - rebonded - exchange_unstaked ,scientific=FALSE)` KSM.
+
+**Result 4:**
+
+* A significant amount of tokens has been contributed to crowdloans.
+* Most contributions concentrate on Karura.
+* An estimate suggests that only around `r round((contributed_from_stake / (total_unstaked-exchange_unstaked))*100,2)`% of unstaked tokens went into crowdloans. The remaining tokens are either still liquid for further contributions or are sold (or hold without using them).
+* The real number is likely to be higher. Nevertheless, this indicates that a significant amount of KSM is still liquid to either be contributed to the crowdloans or will be (or already are) sold.
+* A large amount of contributions has been done by KSM that were already liquid before the 13th of May.
+
+# Conclusion
+
+The crypto-market is experiencing a bear market that negatively affects all prices. As seen in the tables above, KSM suffered similar price decrease than those of competitors. However, there was a period around the announcement that increased the price significantly (even during the bear market). If we take that increase as reference point, KSM lost all benefits from the good news of the auctions in the process and did not contribute to a higher relative standing than comparable crypto-currencies. Statistical tests of the unstaking behavior on the price of KSM revealed that there is some pressure coming from people who unstaked. 
+
+**There are some things to consider for the Polkadot announcement:**
+
+* The longer unstaking period could help reduce the pressure on the price, because liquidity is coming more slowly to the market (compared to a price increase from the announcement).
+* Optimally, we find a mechanism to skip unstaking and directly shift funds to crowdloans.
+* It is crucial to time the announcement / conduction of the auctions with a good market situation (either bull market or sidewards trending prices).
+
+
