@@ -10,7 +10,3 @@ In order to get the data, there are a few tools available:
 * For one analysis (ganger-causality between ksm price and unstaking behavior) it is crucial that the number of session files is 24 * the days of price data. This is because Kusama has 24 sessions a day and in the analysis it collapses those into one day. When selecting the sessions from the online bucket, a day starts at 00:24 a.m. and goes until 23:22 p.m.
 
 If you need further help, contact me under jonas@web3.foundation
-
-
-# kusama_analysis
-# kusama_analysis
