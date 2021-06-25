@@ -10,9 +10,6 @@ library(ggplot2)
 library(lmtest)
 library(tseries)
 library(dplyr)
-
-library(tidyverse)
-library(ggfortify)
 ```
 
 ```{r, echo=FALSE}
@@ -105,7 +102,7 @@ price_data = read.csv("price_data/merged.csv")
 
 
 # Introduction
-With the launch of crowdloans and parachain auctions, the Kusama network has overall lost significant market capitalization. However, there is a general decline in crypto-currency prices across all coins, which could bias the perception. This analysis aims to analyze different aspects that happened during a `r nrow(price_data)` days period (between the `r price_data$snapped_at[1]` and `r price_data$snapped_at[nrow(price_data)]`). This includes the mid of May where prices were generally high, as well as the following bear market during which the Kusama auctions were announced and launched.
+With the launch of crowdloans and parachain auctions, the Kusama network has overall lost significant market capitalization. However, there is a general decline in crypto-currency prices across all coins, which could bias the perception. This analysis aims to analyze different aspects that happened during a `r nrow(price_data)` days period (between `r price_data$snapped_at[1]` and `r price_data$snapped_at[nrow(price_data)]`). This includes the mid of May where prices were generally high, as well as the following bear market during which the Kusama auctions were announced and launched.
 
 In this analysis, I focus on market data (prices, market cap and trading volume) of BTC, KSM and some close competitors. Additionally, I incorporate behavioral on-chain data (unstaking decisions and crowdloan contributions). The following questions should be answered:
 
@@ -297,6 +294,7 @@ title = paste("Staking rate")
   p <- ggplot(df, aes(x=session, y=staking_rate)) + geom_line() + xlab("Sessions") + ylab("Staking Rate") + ggtitle(title)  + ylim(min(0),max(1))+ geom_vline(xintercept=c(13384,13391), linetype='dashed', color='blue', size=0.5) + annotate(x=13384,y=+Inf,label="Auction Announcement / First Crowdloan",vjust=2,geom="label")
 plot(p)
 ```
+
 The staking rate revolves around 50%, which is actually quite far away from the optimal of 75%. If this remains an issue even with the changes that come to the optimal staking rate due to parachains, this needs to be further addressed in the future. Apart from that, the impact on the staking rate was around 3% of all issued tokens.
 
 
@@ -349,10 +347,11 @@ df_tmp = as.data.frame(cbind(x,days, nominators_bond_history))
 df_new = aggregate(df_tmp$nominators_bond_history, by=list(df_tmp$days), FUN=mean)
 
 bond_ts = ts(df_new$x, start = 1, frequency = 1)
+ksm_ts_price = ts(price_data$ksm_price)
 
 combined_matrix_bond_ksm_price <-  matrix(c(bond_ts, ksm_ts_price),nrow=length(bond_ts))
 combined_timeseries_bond_ksm_price <- ts(combined_matrix_bond_ksm_price, start = 1, frequency = 1, names = c("staked_amount", "ksm_price"))
-grangertest(ksm_price ~ staked_amount, data = combined_timeseries_bond_ksm_price, order = 1)
+grangertest(ksm_price ~ staked_amount, data = combined_timeseries_bond_ksm_price, order = 2)
 ```
 
 The statistical test is significant which means, that we can reject the H0 that the unstaking behavior does not influence the price of KSM. The reverse causality is not true (p < 0.2946), i.e., the KSM price did not influence unstaking decisions. 
@@ -372,6 +371,8 @@ plot(combined_timeseries)
 
 
 # Crowdloan Data
+
+In this section we analyze crowdloan contributions to the different projects as well as how much unstaked KSM went into crowdloans.
 
 ```{r, echo=show_code}
 df_crowdloans = read.csv("crowdloan_contributions/output.csv", stringsAsFactors = FALSE)
@@ -428,7 +429,7 @@ The following table shows the number of KSM contributed to each project (up unti
 | Shiden    |      `r format(shiden_contribution,scientific=FALSE)`            |
 | Moonriver |      `r format(moonriver_contribution,scientific=FALSE)`            |
 | Darwinia  |      `r format(darwinia_contribution,scientific=FALSE)`            |
-
+| **Sum** | `r format(sum(df_crowdloans$contributed*normalization),scientific=FALSE)`| 
 
 
 ## Stake to Contributions
@@ -452,7 +453,7 @@ The amount of tokens from the total unstaking during the period which are still 
 
 # Conclusion
 
-The crypto-market is experiencing a bear market that negatively affects all prices. As seen in the tables above, KSM suffered similar price decrease than those of competitors. However, there was a period around the announcement that increased the price significantly (even during the bear market). If we take that increase as reference point, KSM lost all benefits from the good news of the auctions in the process and did not contribute to a higher relative standing than comparable crypto-currencies. Statistical tests of the unstaking behavior on the price of KSM revealed that there is some pressure coming from people who unstaked. 
+The crypto-market is experiencing a bear market that negatively affects all prices. As seen in the tables above, KSM suffered similar price decrease than those of competitors. However, there was a period around the announcement that increased the price significantly (even during the bear market). If take that situation as reference point, KSM lost all momentum from the good news of the auctions in the process and did not contribute to a higher relative standing than comparable crypto-currencies.  
 
 **There are some things to consider for the Polkadot announcement:**
 
