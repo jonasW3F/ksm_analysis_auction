@@ -1,3 +1,4 @@
 price_data/*.csv
 kusama_datasets/*.csv
 crowdloan_contributions/*.csv
+*.html
