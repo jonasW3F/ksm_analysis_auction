@@ -390,7 +390,7 @@ In this section we analyze crowdloan contributions to the different projects as 
 df_crowdloans = read.csv("crowdloan_contributions/output.csv", stringsAsFactors = FALSE)
 
 # Collapse on Project level
-df_crowdloans_teams = aggregate(df_crowdloans$contributed*normalization, list(df_crowdloans$para_id), sum)
+df_crowdloans_teams = aggregate(df_crowdloans$contributing*normalization, list(df_crowdloans$para_id), sum)
 
 karura_contribution = df_crowdloans_teams[df_crowdloans_teams$Group.1 == 2000, "x"]
 bifrost_contribution = df_crowdloans_teams[df_crowdloans_teams$Group.1 == 2001, "x"]
@@ -401,7 +401,7 @@ moonriver_contribution = df_crowdloans_teams[df_crowdloans_teams$Group.1 == 2023
 
 
 # Collapse on account level
-df_crowdloans_aggregated = aggregate(df_crowdloans$contributed, list(df_crowdloans$who), sum)
+df_crowdloans_aggregated = aggregate(df_crowdloans$contributing, list(df_crowdloans$who), sum)
 df_crowdloans_aggregated = rename(df_crowdloans_aggregated, stash_address = Group.1, contribution = x)
 df_crowdloans_aggregated$contribution = df_crowdloans_aggregated$contribution*normalization
 
